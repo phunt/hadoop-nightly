@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Usage: tar-munge 0.21.0-SNAPSHOT hadoop-{common,hdfs,mapred}-*.tar.gz
+# reads tarballs from command line
+# writes hadoop-$vers.tar.gz
+
+set -x
+set -e
+
+WORKDIR="hadoop-$1"
+
+# erase the output directory and recreate it
+rm -fr "$WORKDIR"
+mkdir "$WORKDIR"
+
+# untar the sub-projects
+cat "$2" | (cd "$WORKDIR"; tar xzf -)
+cat "$3" | (cd "$WORKDIR"; tar xzf -)
+cat "$4" | (cd "$WORKDIR"; tar xzf -)
+
+# cd into the work directory
+cd "$WORKDIR"
+
+# get rid of the version names
+mv hadoop-common-* common
+mv hadoop-hdfs-* hdfs
+mv hadoop-mapred-* mapred
+
+# munge text docs
+mv common/{LICENSE,NOTICE,README}.txt .
+rm hdfs/{LICENSE,NOTICE}.txt # same as common
+rm mapred/{LICENSE,NOTICE}.txt # same as common
+
+# munge the bin and conf directories
+for dir in bin conf; do
+  mkdir $dir
+  for proj in common hdfs mapred; do
+    cp -Rp $proj/$dir/* $dir
+  done
+done
+
+# munge the lib directory
+mkdir lib
+for proj in common hdfs mapred; do
+  cp -Rp $proj/lib/* lib
+  rm -r $proj/lib
+done
+rm lib/hadoop-*.jar # hdfs and mapred dependencies on common, hdfs jars
+
+# munge the webapps directory
+mkdir webapps
+for proj in hdfs mapred; do
+  cp -Rp $proj/webapps/* webapps
+  rm -r $proj/webapps
+done
+
+# get the mapred c++ (if compiled)
+mkdir c++
+for proj in hdfs mapred; do
+  if [ -d $proj/c++ ]; then
+    cp -Rp $proj/c++/* c++
+    rm -r $proj/c++
+  fi
+done
+
+# get our jar files
+mv {common,hdfs,mapred}/*.jar .
+
+# tar up the result
+cd ..
+tar czf "hadoop-$1.tar.gz" "hadoop-$1"
